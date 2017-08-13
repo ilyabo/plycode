@@ -13,10 +13,12 @@
       :mode :stop
       :step 0
       :code [
-        [:left 180]
-        [:forward 3]
-        [:right 90]
-        [:forward 5]
+        [:left]
+        [:forward 1]
+        [:right]
+        [:forward 1]
+        [:left]
+        [:forward 1]
       ]
     }
 
@@ -28,23 +30,67 @@
     }
 
     :turtle {
-      :x 10
-      :y 10
-      :rot 0
+      :x 11
+      :y 1
+      :dir :S
     }
 
   }))
+
+  (def turtle-circles
+    [
+      ; body
+      { :cx 0.5 :cy 0.6 :r 0.25 }
+      ; head
+      { :cx 0.5 :cy 0.25 :r 0.1 }
+      ; legs
+      { :cx 0.75 :cy 0.38 :r 0.05 }
+      { :cx 0.25 :cy 0.38 :r 0.05 }
+      { :cx 0.75 :cy 0.83 :r 0.05 }
+      { :cx 0.25 :cy 0.83 :r 0.05 }
+      ])
+
+
+  (def dirs [:N :E :S :W])
+      
+  (defn dir-to-offset [dir]
+    (case dir
+      :N [0 -1]
+      :E [-1 0]
+      :S [0 1]
+      :W [1 0]
+      [0 0]))
+
+  (defn dir-to-rotation [dir]
+    (case dir
+      :N 0
+      :E 90
+      :S 180
+      :W 270
+      0))
 
 
 (defn play! []
   (swap! app-state assoc-in [:program :mode] :play))
 
+(defn apply-stop [prev-state]
+  (-> prev-state
+    (assoc-in [:program :mode] :stop)
+    (assoc-in [:program :step] 0)))
+
 (defn stop! []
-  (swap! app-state
-    (fn [prev-state]
-      (-> prev-state
-        (assoc-in [:program :mode] :stop)
-        (assoc-in [:program :step] 0)))))
+  (swap! app-state apply-stop))
+
+
+(defn apply-step-code [turtle-state step-code]
+  (let [[cmd arg] step-code]
+  (case cmd
+    :forward
+      (let [[dx dy] (dir-to-offset (:dir turtle-state))]
+        (-> turtle-state
+          (update :x + (* arg dx))
+          (update :y + (* arg dy))))
+    turtle-state)))
 
 
 (defn next-step! []
@@ -56,30 +102,19 @@
               (= (:mode program) :play)
               (< (:step program) num-steps))
             (-> prev-state
-              (update-in [:program :step] inc))
-            prev-state)))))
+              (update-in [:program :step] inc)
+              (update-in [:turtle] apply-step-code
+                (-> program :code (nth (-> program :step inc)))))
+            (apply-stop prev-state))))))
 
 
 
 
-(def turtle-circles
-  [
-    ; body
-    { :cx 0.5 :cy 0.6 :r 0.25 }
-    ; head
-    { :cx 0.5 :cy 0.25 :r 0.1 }
-    ; legs
-    { :cx 0.75 :cy 0.38 :r 0.05 }
-    { :cx 0.25 :cy 0.38 :r 0.05 }
-    { :cx 0.75 :cy 0.83 :r 0.05 }
-    { :cx 0.25 :cy 0.83 :r 0.05 }
-    ])
 
-
-(defn turtle [{:keys [x y rot]}]
+(defn turtle [{:keys [x y dir]}]
   [:g
     {:transform
-      (str "translate(" x "," y ")" "rotate(" rot ")")
+      (str "translate(" x "," y ")" "rotate(" (dir-to-rotation dir) ")")
     }
     (for [c turtle-circles]
         [:circle (merge c  {
@@ -146,7 +181,7 @@
    ])
 
 
-(js/setInterval next-step! 1000)
+(js/setInterval next-step! 100)
 
 (reagent/render-component [world]
                           (. js/document (getElementById "app")))
