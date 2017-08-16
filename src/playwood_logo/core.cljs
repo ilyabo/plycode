@@ -7,10 +7,11 @@
 
 ;; define your app data so that it doesn't get over-written on reload
 
+(def step-timeout 500)
 (def initial-turtle-state
   {
-   :x   11
-   :y   1
+   :x   10
+   :y   0
    :dir :S
    })
 
@@ -20,16 +21,21 @@
                           :mode :stop
                           :step 0
                           :code [
+                                 [:forward]
                                  [:left]
-                                 [:forward 1]
+                                 [:forward]
                                  [:right]
-                                 [:forward 1]
+                                 [:forward]
                                  [:left]
-                                 [:forward 1]
-                                 ]
+                                 [:forward]
+                                 [:right]
+                                 [:right]
+                                 [:forward]
+                                 [:left]
+                           ]
                           }
 
-                :grid    {
+                :board    {
                           :width    400
                           :height   300
                           :num-rows 21
@@ -64,9 +70,9 @@
 (defn dir-to-offset [dir]
   (case dir
     :N [0 -1]
-    :E [-1 0]
+    :E [1 0]
     :S [0 1]
-    :W [1 0]
+    :W [-1 0]
     [0 0]))
 
 (defn dir-to-rotation [dir]
@@ -78,53 +84,59 @@
     0))
 
 
-(defn play! []
-  (swap! app-state assoc-in [:program :mode] :play))
-
-(defn reset-turtle! []
-  (swap! app-state assoc :turtle initial-turtle-state))
 
 (defn apply-stop [prev-state]
   (-> prev-state
       (assoc-in [:program :mode] :stop)
       (assoc-in [:program :step] 0)))
 
-(defn stop! []
-  (swap! app-state apply-stop))
-
 
 (defn apply-command [turtle-state step-code]
   (let [[cmd arg] step-code]
     (case cmd
       :left
-      (-> turtle-state
-                  (update :dir rotate-left))
+      (-> turtle-state (update :dir rotate-left))
       :right
-      (-> turtle-state
-                  (update :dir rotate-right))
+      (-> turtle-state (update :dir rotate-right))
 
       :forward
-      (let [[dx dy] (dir-to-offset (:dir turtle-state))]
+      (let [[dx dy] (dir-to-offset (:dir turtle-state))
+            amount (or arg 1)]
         (-> turtle-state
-            (update :x + (* arg dx))
-            (update :y + (* arg dy))))
+            (update :x + (* amount dx))
+            (update :y + (* amount dy))))
       turtle-state)))
 
 
-(defn next-step! []
-  (swap! app-state
-         (fn [prev-state]
-           (let [program (:program prev-state)
-                 num-steps (-> program :code count dec)]
-             (if (and
-                   (= (:mode program) :play)
-                   (< (:step program) num-steps))
-               (-> prev-state
-                   (update-in [:program :step] inc)
-                   (update-in [:turtle] apply-command
-                              (-> program :code (nth (-> program :step inc)))))
-               (apply-stop prev-state))))))
+(defn should-proceed-running []
+  (let [program (:program @app-state)]
+    (and (= (:mode program) :play)
+      (< (-> program :step) (-> program :code count)))))
 
+
+(defn next-step! []
+  (if (should-proceed-running)
+    (do
+      (swap! app-state
+             (fn [prev-state]
+               (let [program (:program prev-state)]
+                 (-> prev-state
+                     (update-in [:turtle] apply-command
+                                (-> program :code (get (-> program :step))))
+                     (update-in [:program :step] inc)))))
+      (js/setTimeout next-step! step-timeout))
+    (swap! app-state apply-stop)))
+
+
+(defn play! []
+  (swap! app-state assoc-in [:program :mode] :play)
+  (js/setTimeout next-step! step-timeout))
+
+(defn reset-turtle! []
+  (swap! app-state assoc :turtle initial-turtle-state))
+
+(defn stop! []
+  (swap! app-state apply-stop))
 
 
 
@@ -132,7 +144,7 @@
 (defn Turtle [{:keys [x y dir]}]
   [:g
    {:transform
-    (str "translate(" x "," y ")" "rotate(" (dir-to-rotation dir) ")")
+    (str "translate(" x "," y ")" "rotate(" (dir-to-rotation dir) " 0.5 0.5)")
     }
    (for [c turtle-circles]
      [:circle (merge c  {
@@ -155,11 +167,11 @@
 
 
 (defn Board []
-  (let [grid (:grid @app-state)
-        width (:width grid)
-        height (:height grid)
-        num-rows (:num-rows grid)
-        num-cols (:num-cols grid)]
+  (let [board (:board @app-state)
+        width (:width board)
+        height (:height board)
+        num-rows (:num-rows board)
+        num-cols (:num-cols board)]
     [:svg {:width width
            :height height}
      [:g {:transform
@@ -173,7 +185,24 @@
      ]))
 
 
-(defn controls []
+(defn CurrentCommand []
+  (let [program (@app-state :program)
+        mode  (program :mode)
+        step (program :step)
+        code (program :code)
+        command (get code step)]
+    (if (= mode :play)
+      [:span (str command)])))
+
+(defn CurrentState []
+  (let [turtle (@app-state :turtle)]
+    [:div
+     [:span (str turtle)]
+     [:span (-> @app-state :program :mode)]]
+    ))
+
+
+(defn Controls []
   [:div {:style {
                  :display "flex" :flex-direction "column" :align-items "center"
                  }}
@@ -186,20 +215,19 @@
                :style { :font-family "monospace" :width 400 :height 300 }
                :value (-> @app-state :program :code (#(apply str %)))} ]
 
-   [:div  "Step: " (-> @app-state :program :step)]
+   [:div  [CurrentCommand]]
    ])
 
 
-(defn world []
-  [:div {:style { :display "flex" :flex-direction "column" }}
+(defn App []
+  [:div {:style { :display "flex" :flex-direction "column" :align-items "center" }}
    [Board]
-   [controls]
+   [Controls]
    ])
 
 
-(js/setInterval next-step! 100)
 
-(reagent/render-component [world]
+(reagent/render-component [App]
                           (. js/document (getElementById "app")))
 
 (defn on-js-reload []
