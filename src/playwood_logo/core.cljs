@@ -90,7 +90,7 @@
       (assoc-in [:program :mode] :stop)
       (assoc-in [:program :step] 0)))
 
-
+; consider using multimethods for this, see http://bit.ly/2xaFC4l
 (defn apply-command [turtle-state step-code]
   (let [[cmd arg] step-code]
     (case cmd
